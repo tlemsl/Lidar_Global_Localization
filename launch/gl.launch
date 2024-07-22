@@ -1,0 +1,5 @@
+<launch>
+  <node pkg="localizer" type="global_localizer" name="global_localizer" output="screen" launch-prefix="gdb -ex run --args">
+    <param name="pcd_file" value="$(find fast_lio)/PCD/4F.pcd"/>
+  </node>
+</launch>
