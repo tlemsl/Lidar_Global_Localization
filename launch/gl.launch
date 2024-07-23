@@ -1,5 +1,43 @@
 <launch>
-  <node pkg="localizer" type="global_localizer" name="global_localizer" output="screen" launch-prefix="gdb -ex run --args">
-    <param name="pcd_file" value="$(find fast_lio)/PCD/4F.pcd"/>
-  </node>
+    <!-- Voxel parameters -->
+    <arg name="voxel_leaf_size" default="0.5" />
+
+    <!-- Quatro parameters -->
+    <arg name="quatro_mse_th" default="1" />
+
+    <!-- MCL Parameters -->
+    <arg name="num_particles" default="100" />
+    <arg name="mcl_converge_th" default="0.01" />
+    <arg name="mcl_max_iteration" default="1" />
+    <arg name="mcl_mse_th" default="0.3" />
+    <arg name="particle_x_bound" default="1.0" />
+    <arg name="particle_y_bound" default="1.0" />
+    <arg name="particle_z_bound" default="0.1" />
+    <arg name="particle_yaw_bound" default="0.2" />
+    
+    <!-- GICP parameters -->
+    <arg name="gicp_max_iterations" default="50" />
+    <arg name="gicp_transformation_epsilon" default="1e-8" />
+    <arg name="gicp_euclidean_fitness_epsilon" default="1e-5" />
+
+    <!-- Node definition with parameters from arguments -->
+    <node pkg="localizer" type="global_localizer" name="global_localizer" output="screen">
+        <param name="pcd_file" value="$(find fast_lio)/PCD/4F.pcd"/>
+
+        <param name="voxel_leaf_size" value="$(arg voxel_leaf_size)" />
+        <param name="quatro_mse_th" value="$(arg quatro_mse_th)" />
+
+        <param name="num_particles" value="$(arg num_particles)" />
+        <param name="mcl_converge_th" value="$(arg mcl_converge_th)" />
+        <param name="mcl_max_iteration" value="$(arg mcl_max_iteration)" />
+        <param name="mcl_mse_th" value="$(arg mcl_mse_th)" />
+        <param name="particle_x_bound" value="$(arg particle_x_bound)" />
+        <param name="particle_y_bound" value="$(arg particle_y_bound)" />
+        <param name="particle_z_bound" value="$(arg particle_z_bound)" />
+        <param name="particle_yaw_bound" value="$(arg particle_yaw_bound)" />
+
+        <param name="gicp_max_iterations" value="$(arg gicp_max_iterations)" />
+        <param name="gicp_transformation_epsilon" value="$(arg gicp_transformation_epsilon)" />
+        <param name="gicp_euclidean_fitness_epsilon" value="$(arg gicp_euclidean_fitness_epsilon)" />
+    </node>
 </launch>

@@ -18,37 +18,81 @@
 
 #include <thread>
 
-using QuatroPointType = pcl::PointXYZ; //can be changed
+using QuatroPointType = pcl::PointXYZ; // can be changed
 
 typedef pcl::PointCloud<QuatroPointType> PointCloud;
 
-class GlobalLocalizer {
+class GlobalLocalizer
+{
 public:
     // EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     GlobalLocalizer();
     ~GlobalLocalizer();
-    void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg);
+
 private:
+    void cloudCallback(const sensor_msgs::PointCloud2ConstPtr &cloud_msg);
     void loadMap();
     void publishPose();
+    
+    void initializeParticles(const Eigen::Matrix4d &quatro_transformation);
+    Eigen::Matrix4d randomTransform();
+
+    void weightParticles(PointCloud::Ptr cloud);
+    void sensorUpdate(const PointCloud::Ptr &cloud);
+    void resampleParticles();
+    
+    double computeMSE(const PointCloud &cloud1, const PointCloud &cloud2);
+    void upateTransformation(Eigen::Matrix4d transformation);
 
     ros::NodeHandle nh_;
     ros::Subscriber sub_;
     ros::Publisher robot_pose_pub_;
     ros::Publisher map_pub_;
-    ros::Publisher aligned_pub_;
-    tf::TransformBroadcaster* br_;
+    ros::Publisher Quatro_pub_;
+    ros::Publisher MCL_pub_;
+    ros::Publisher Particle_pub_;
+
+    tf::TransformBroadcaster *br_;
     tf2_ros::Buffer tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
     tf2_ros::TransformBroadcaster tf_broadcaster_;
+
     pcl::GeneralizedIterativeClosestPoint<QuatroPointType, QuatroPointType> gicp_;
     PointCloud::Ptr map_;
-    Eigen::Matrix4d last_transformation_;
+
+    Eigen::Matrix4d map_to_odom_transformation_;
+
     std::shared_ptr<quatro<QuatroPointType>> m_quatro_handler;
 
-    std::thread pose_publishing_thread_; 
+    std::thread pose_publishing_thread_;
 
+    // GICP parameters
+    int gicp_max_iterations_;
+    double gicp_transformation_epsilon_;
+    double gicp_euclidean_fitness_epsilon_;
+
+    // Voxelize parameters
+    double voxel_leaf_size_;
+
+    // Quatro parmeters
+    double quatro_mse_th_;
+
+    // MCL parameters
+    int num_particles_;
+    double mcl_converge_th_;
+    int mcl_max_iteration_;
+    double mcl_mse_th_;
+    double particle_x_bound_, particle_y_bound_, particle_z_bound_, particle_yaw_bound_;
+
+    double best_mse_ = 100;
+    struct Particle
+    {
+        Eigen::Matrix4d pose;
+        double weight;
+        double score;
+    };
+
+    std::vector<Particle> particles_;
 };
-
 
 #endif
