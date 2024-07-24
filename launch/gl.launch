@@ -6,21 +6,24 @@
     <arg name="quatro_mse_th" default="1" />
 
     <!-- MCL Parameters -->
-    <arg name="num_particles" default="100" />
+    <arg name="num_particles" default="200" />
     <arg name="mcl_converge_th" default="0.01" />
     <arg name="mcl_max_iteration" default="1" />
     <arg name="mcl_mse_th" default="0.3" />
-    <arg name="particle_x_bound" default="1.0" />
-    <arg name="particle_y_bound" default="1.0" />
+    <arg name="particle_x_bound" default="2.0" />
+    <arg name="particle_y_bound" default="2.0" />
     <arg name="particle_z_bound" default="0.1" />
-    <arg name="particle_yaw_bound" default="0.2" />
+    <arg name="particle_yaw_bound" default="0.2" /> 
     
     <!-- GICP parameters -->
     <arg name="gicp_max_iterations" default="50" />
     <arg name="gicp_transformation_epsilon" default="1e-8" />
     <arg name="gicp_euclidean_fitness_epsilon" default="1e-5" />
 
-    <!-- Node definition with parameters from arguments -->
+    <!-- GL parameters -->
+    <arg name="terminal_mse" default="0.01" />
+    <arg name="update_period" default="5" />
+
     <node pkg="localizer" type="global_localizer" name="global_localizer" output="screen">
         <param name="pcd_file" value="$(find fast_lio)/PCD/4F.pcd"/>
 
@@ -39,5 +42,8 @@
         <param name="gicp_max_iterations" value="$(arg gicp_max_iterations)" />
         <param name="gicp_transformation_epsilon" value="$(arg gicp_transformation_epsilon)" />
         <param name="gicp_euclidean_fitness_epsilon" value="$(arg gicp_euclidean_fitness_epsilon)" />
+
+        <param name="terminal_mse" value="$(arg terminal_mse)" />
+        <param name="update_period" value="$(arg update_period)" />
     </node>
 </launch>

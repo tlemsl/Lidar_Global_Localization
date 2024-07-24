@@ -60,7 +60,7 @@ private:
     pcl::GeneralizedIterativeClosestPoint<QuatroPointType, QuatroPointType> gicp_;
     PointCloud::Ptr map_;
 
-    Eigen::Matrix4d map_to_odom_transformation_;
+    Eigen::Matrix4d odom_to_map_transfromation_;
 
     std::shared_ptr<quatro<QuatroPointType>> m_quatro_handler;
 
@@ -83,6 +83,10 @@ private:
     int mcl_max_iteration_;
     double mcl_mse_th_;
     double particle_x_bound_, particle_y_bound_, particle_z_bound_, particle_yaw_bound_;
+
+    // GL parameter
+    double terminal_mse_;
+    int update_period_;
 
     double best_mse_ = 100;
     struct Particle

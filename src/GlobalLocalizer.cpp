@@ -88,6 +88,10 @@ GlobalLocalizer::GlobalLocalizer() {
     nh_.param("gicp_transformation_epsilon", gicp_transformation_epsilon_, 1e-8);
     nh_.param("gicp_euclidean_fitness_epsilon", gicp_euclidean_fitness_epsilon_, 1e-5);
 
+    nh_.param("terminal_mse", terminal_mse_, 0.01);
+    nh_.param("update_period", update_period_, 3);
+
+
     gicp_.setMaximumIterations(gicp_max_iterations_);
     gicp_.setTransformationEpsilon(gicp_transformation_epsilon_);
     gicp_.setEuclideanFitnessEpsilon(gicp_euclidean_fitness_epsilon_);
@@ -105,7 +109,7 @@ GlobalLocalizer::GlobalLocalizer() {
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(tf_buffer_);
 
     // Initialize last transformation to identity
-    map_to_odom_transformation_ = Eigen::Matrix4d::Identity();
+    odom_to_map_transfromation_ = Eigen::Matrix4d::Identity();
 
     // Start the publishPose function in a separate thread
     pose_publishing_thread_ = std::thread(&GlobalLocalizer::publishPose, this);
@@ -202,6 +206,12 @@ void GlobalLocalizer::resampleParticles() {
 
 void GlobalLocalizer::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg) {
     ROS_INFO_STREAM("\n\n\nReceived point cloud message.");
+
+    if(best_mse_ < terminal_mse_){
+        ROS_INFO_STREAM("Already reach the terminal mse: " << best_mse_);
+        std::this_thread::sleep_for(std::chrono::seconds(100));
+        return;
+    }
     
     // Publish the voxelized map
     sensor_msgs::PointCloud2 map_msg;
@@ -334,6 +344,7 @@ void GlobalLocalizer::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& clou
     } else {
         ROS_WARN("QUATRO did not converge.");
     }
+    std::this_thread::sleep_for(std::chrono::seconds(update_period_));
 }
 
 double GlobalLocalizer::computeMSE(const PointCloud& cloud1, const PointCloud& cloud2) {
@@ -372,16 +383,16 @@ double GlobalLocalizer::computeMSE(const PointCloud& cloud1, const PointCloud& c
 
 void GlobalLocalizer::upateTransformation(Eigen::Matrix4d transformation) {
     // Get the odom->base_link transform from tf
-    geometry_msgs::TransformStamped odom_to_base_link;
-    try {
-         odom_to_base_link = tf_buffer_.lookupTransform("odom", "base_link", ros::Time(0));
-    } catch (tf2::TransformException &ex) {
-        ROS_WARN("%s", ex.what());
-        return;
-    }
-    Eigen::Matrix4d odom_to_base_transformation = convertTFToEigen(odom_to_base_link);
-    map_to_odom_transformation_ = transformation * odom_to_base_transformation.inverse();
-
+    // geometry_msgs::TransformStamped base_to_odom;
+    // try {
+    //      base_to_odom = tf_buffer_.lookupTransform("odom", "base_link", ros::Time(0));
+    // } catch (tf2::TransformException &ex) {
+    //     ROS_WARN("%s", ex.what());
+    //     return;
+    // }
+    // Eigen::Matrix4d base_to_odom_transformation = convertTFToEigen(base_to_odom);
+    // odom_to_map_transfromation_ = transformation * base_to_odom_transformation.inverse();
+    odom_to_map_transfromation_ = transformation;
 }   
 
 void GlobalLocalizer::loadMap() {
@@ -409,26 +420,28 @@ void GlobalLocalizer::publishPose() {
     while (ros::ok()) {
 
         // Convert the map->odom transformation to a TransformStamped
-        geometry_msgs::TransformStamped map_to_odom = convertEigenToTF(map_to_odom_transformation_,
+        geometry_msgs::TransformStamped odom_to_map = convertEigenToTF(odom_to_map_transfromation_,
                                             "map", "odom",ros::Time::now());
 
         // Publish the map->odom transform
-        tf_broadcaster_.sendTransform(map_to_odom);
+        tf_broadcaster_.sendTransform(odom_to_map);
 
         // Publish the robot_pose topic
-        geometry_msgs::TransformStamped odom_to_base_link;
+        geometry_msgs::TransformStamped base_to_odom;
         try {
-            odom_to_base_link = tf_buffer_.lookupTransform("odom", "base_link", ros::Time(0));
+            base_to_odom = tf_buffer_.lookupTransform("odom", "base_link", ros::Time(0));
         } catch (tf2::TransformException &ex) {
             ROS_WARN("%s", ex.what());
             rate.sleep();
             continue;
         }
-        Eigen::Matrix4d map_to_base_transformation = map_to_odom_transformation_ * convertTFToEigen(odom_to_base_link);
+
+        Eigen::Matrix4d map_to_base_transformation = odom_to_map_transfromation_ * convertTFToEigen(base_to_odom);
 
         // Extract position and orientation from the Eigen matrix
-        Eigen::Vector3d position = map_to_base_transformation.block<3, 1>(0, 3);
-        Eigen::Matrix3d rotationMatrix = map_to_base_transformation.block<3, 3>(0, 0);
+        Eigen::Matrix4d base_pose = map_to_base_transformation;
+        Eigen::Vector3d position = base_pose.block<3, 1>(0, 3);
+        Eigen::Matrix3d rotationMatrix = base_pose.block<3, 3>(0, 0);
         Eigen::Quaterniond quaternion(rotationMatrix);
 
         // Create and populate the PoseStamped message
