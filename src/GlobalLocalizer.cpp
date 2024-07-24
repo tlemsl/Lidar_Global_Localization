@@ -341,10 +341,12 @@ void GlobalLocalizer::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& clou
             ROS_INFO_STREAM("!!!Update Transformation with mse: " << best_mse_);
             ROS_INFO_STREAM(final_transformation);
         } 
+        std::this_thread::sleep_for(std::chrono::seconds(update_period_));
+
     } else {
         ROS_WARN("QUATRO did not converge.");
+        std::this_thread::sleep_for(std::chrono::seconds(update_period_/2));
     }
-    std::this_thread::sleep_for(std::chrono::seconds(update_period_));
 }
 
 double GlobalLocalizer::computeMSE(const PointCloud& cloud1, const PointCloud& cloud2) {

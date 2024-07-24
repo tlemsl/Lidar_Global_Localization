@@ -22,7 +22,7 @@
 
     <!-- GL parameters -->
     <arg name="terminal_mse" default="0.01" />
-    <arg name="update_period" default="5" />
+    <arg name="update_period" default="10" />
 
     <node pkg="localizer" type="global_localizer" name="global_localizer" output="screen">
         <param name="pcd_file" value="$(find fast_lio)/PCD/4F.pcd"/>
