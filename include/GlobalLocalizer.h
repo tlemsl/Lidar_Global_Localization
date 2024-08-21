@@ -1,8 +1,10 @@
 #ifndef GLOBAL_LOCALIZER_H_
 #define GLOBAL_LOCALIZER_H_
 
+#include <memory>
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <nav_msgs/Odometry.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl_ros/point_cloud.h>
 #include <pcl/point_types.h>
@@ -13,6 +15,9 @@
 #include <tf/transform_listener.h>
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/transform_listener.h>
+#include <message_filters/subscriber.h>
+#include <message_filters/time_synchronizer.h>
+#include <message_filters/sync_policies/approximate_time.h>
 
 #include <quatro/quatro_module.h>
 
@@ -45,7 +50,10 @@ private:
     void upateTransformation(Eigen::Matrix4d transformation);
 
     ros::NodeHandle nh_;
-    ros::Subscriber sub_;
+    std::shared_ptr<message_filters::Synchronizer<message_filters::sync_policies::ApproximateTime<nav_msgs::Odometry, sensor_msgs::PointCloud2>>> m_sub_odom_pcd_sync = nullptr;
+    std::shared_ptr<message_filters::Subscriber<nav_msgs::Odometry>> m_sub_odom = nullptr;
+    std::shared_ptr<message_filters::Subscriber<sensor_msgs::PointCloud2>> m_sub_pcd = nullptr;
+
     ros::Publisher robot_pose_pub_;
     ros::Publisher map_pub_;
     ros::Publisher Quatro_pub_;

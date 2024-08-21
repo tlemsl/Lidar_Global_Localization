@@ -58,9 +58,7 @@ geometry_msgs::TransformStamped convertEigenToTF(const Eigen::Matrix4d& eigenMat
 GlobalLocalizer::GlobalLocalizer() { 
     nh_ = ros::NodeHandle("~");
 
-    // Subscribe to point cloud topic
-    sub_ = nh_.subscribe("/Laser_map", 1, &GlobalLocalizer::cloudCallback, this);
-    
+
     // Initialize publishers
     robot_pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/robot_pose", 1);
     map_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/voxelized_map", 1);
@@ -101,6 +99,10 @@ GlobalLocalizer::GlobalLocalizer() {
 
     // Initialize Quatro
     m_quatro_handler = std::make_shared<quatro<QuatroPointType>>(3.5, 5.0, 0.3, 1.4, 0.00011, 500, false);
+    m_sub_odom = std::make_shared<message_filters::Subscriber<nav_msgs::Odometry>>(nh_, "/Odometry", 10);
+    m_sub_pcd = std::make_shared<message_filters::Subscriber<sensor_msgs::PointCloud2>>(nh_, "/cloud_registered", 10);
+    m_sub_odom_pcd_sync = std::make_shared<message_filters::Synchronizer<message_filters::sync_policies::ApproximateTime<nav_msgs::Odometry, sensor_msgs::PointCloud2>>>>(odom_pcd_sync_pol(10), *m_sub_odom, *m_sub_pcd);
+    m_sub_odom_pcd_sync->registerCallback(boost::bind(&FastLioLocalizationQnClass::odomPcdCallback, this, _1, _2));
 
     // Initialize transform broadcaster
     br_ = new tf::TransformBroadcaster();
