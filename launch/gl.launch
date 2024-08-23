@@ -1,18 +1,18 @@
 <launch>
     <!-- Voxel parameters -->
-    <arg name="voxel_leaf_size" default="1" />
+    <arg name="voxel_leaf_size" default="1.2" />
 
     <!-- Quatro parameters -->
-    <arg name="quatro_mse_th" default="7" />
+    <arg name="quatro_mse_th" default="10" />
 
     <!-- MCL Parameters -->
     <arg name="num_particles" default="50" />
     <arg name="mcl_converge_th" default="0.01" />
     <arg name="mcl_max_iteration" default="1" />
     <arg name="mcl_mse_th" default="0.3" />
-    <arg name="particle_x_bound" default="2.0" />
-    <arg name="particle_y_bound" default="2.0" />
-    <arg name="particle_z_bound" default="0.1" />
+    <arg name="particle_x_bound" default="15.0" />
+    <arg name="particle_y_bound" default="15.0" />
+    <arg name="particle_z_bound" default="1.0" />
     <arg name="particle_yaw_bound" default="0.2" /> 
     
     <!-- GICP parameters -->
@@ -21,7 +21,7 @@
     <arg name="gicp_euclidean_fitness_epsilon" default="1e-5" />
 
     <!-- GL parameters -->
-    <arg name="terminal_mse" default="0.01" />
+    <arg name="terminal_mse" default="0.08" />
     <arg name="update_period" default="5" />
 
     <node pkg="localizer" type="global_localizer" name="global_localizer" output="screen">

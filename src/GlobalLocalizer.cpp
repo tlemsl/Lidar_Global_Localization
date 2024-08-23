@@ -377,12 +377,18 @@ void GlobalLocalizer::Callback(const nav_msgs::OdometryConstPtr& odom_msg, const
         MCL_pub_.publish(mcl_msg);
         double final_mse = quatro_mse < mcl_mse ? quatro_mse : mcl_mse;
         Eigen::Matrix4d final_transformation = quatro_mse < mcl_mse ? quatro_transformation : mcl_transformation;
-        if(final_mse < best_mse_) {
-            best_mse_ = final_mse;
+        if (final_mse < terminal_mse_) {
+            // best_mse_ = final_mse;
             upateTransformation(final_transformation);
             ROS_INFO_STREAM("!!!Update Transformation with mse: " << best_mse_);
             ROS_INFO_STREAM(final_transformation);
-        } 
+        }
+        // if(final_mse < best_mse_) {
+        //     best_mse_ = final_mse;
+        //     upateTransformation(final_transformation);
+        //     ROS_INFO_STREAM("!!!Update Transformation with mse: " << best_mse_);
+        //     ROS_INFO_STREAM(final_transformation);
+        // } 
         // std::this_thread::sleep_for(std::chrono::seconds(update_period_));
 
     } else {
