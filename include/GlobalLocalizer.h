@@ -6,7 +6,6 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <nav_msgs/Odometry.h>
 #include <pcl_conversions/pcl_conversions.h>
-#include <pcl_ros/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/registration/gicp.h>
@@ -22,10 +21,11 @@
 #include <quatro/quatro_module.h>
 
 #include <thread>
+#include <deque>
 
-using QuatroPointType = pcl::PointXYZ; // can be changed
+#include <LidarFrame.h>
 
-typedef pcl::PointCloud<QuatroPointType> PointCloud;
+using sync_policy = message_filters::sync_policies::ApproximateTime<nav_msgs::Odometry, sensor_msgs::PointCloud2>;
 
 class GlobalLocalizer
 {
@@ -35,7 +35,7 @@ public:
     ~GlobalLocalizer();
 
 private:
-    void cloudCallback(const sensor_msgs::PointCloud2ConstPtr &cloud_msg);
+    void Callback(const nav_msgs::OdometryConstPtr& odom_msg, const sensor_msgs::PointCloud2ConstPtr& pcd_msg);
     void loadMap();
     void publishPose();
     
@@ -50,12 +50,12 @@ private:
     void upateTransformation(Eigen::Matrix4d transformation);
 
     ros::NodeHandle nh_;
-    std::shared_ptr<message_filters::Synchronizer<message_filters::sync_policies::ApproximateTime<nav_msgs::Odometry, sensor_msgs::PointCloud2>>> m_sub_odom_pcd_sync = nullptr;
+    std::shared_ptr<message_filters::Synchronizer<sync_policy>> m_sub_odom_pcd_sync = nullptr;
     std::shared_ptr<message_filters::Subscriber<nav_msgs::Odometry>> m_sub_odom = nullptr;
     std::shared_ptr<message_filters::Subscriber<sensor_msgs::PointCloud2>> m_sub_pcd = nullptr;
 
     ros::Publisher robot_pose_pub_;
-    ros::Publisher map_pub_;
+    ros::Publisher map_pub_, best_transformation_pub_;
     ros::Publisher Quatro_pub_;
     ros::Publisher MCL_pub_;
     ros::Publisher Particle_pub_;
@@ -67,8 +67,9 @@ private:
 
     pcl::GeneralizedIterativeClosestPoint<QuatroPointType, QuatroPointType> gicp_;
     PointCloud::Ptr map_;
-
-    Eigen::Matrix4d odom_to_map_transfromation_;
+    PointCloud::Ptr curr_sub_map_;
+    // Means transform the point in the odom frame to map frame T^map_odom(in ORB notation)
+    Eigen::Matrix4d odom_to_map_transfromation_; 
 
     std::shared_ptr<quatro<QuatroPointType>> m_quatro_handler;
 
@@ -103,6 +104,11 @@ private:
         double weight;
         double score;
     };
+
+    int sub_map_size_ = 5;
+    int key_frame_threshold_ = 0.3;
+
+    std::deque<LidarFrame> lidar_queue_;    
 
     std::vector<Particle> particles_;
 };

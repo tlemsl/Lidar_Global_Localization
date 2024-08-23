@@ -3,10 +3,10 @@
     <arg name="voxel_leaf_size" default="0.5" />
 
     <!-- Quatro parameters -->
-    <arg name="quatro_mse_th" default="1" />
+    <arg name="quatro_mse_th" default="7" />
 
     <!-- MCL Parameters -->
-    <arg name="num_particles" default="200" />
+    <arg name="num_particles" default="50" />
     <arg name="mcl_converge_th" default="0.01" />
     <arg name="mcl_max_iteration" default="1" />
     <arg name="mcl_mse_th" default="0.3" />

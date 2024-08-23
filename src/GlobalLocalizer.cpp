@@ -53,7 +53,25 @@ geometry_msgs::TransformStamped convertEigenToTF(const Eigen::Matrix4d& eigenMat
     return transformStamped;
 }
 
+Eigen::Matrix4d poseMsgToEigen(const geometry_msgs::Pose& pose) {
+    Eigen::Matrix4d transform = Eigen::Matrix4d::Identity();
 
+    // Extract the orientation (quaternion) from the Pose message
+    Eigen::Quaterniond q(pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z);
+
+    // Convert the quaternion to a rotation matrix
+    Eigen::Matrix3d rotation = q.toRotationMatrix();
+
+    // Set the top-left 3x3 part of the transform matrix to the rotation matrix
+    transform.block<3, 3>(0, 0) = rotation;
+
+    // Set the translation component (the last column of the matrix)
+    transform(0, 3) = pose.position.x;
+    transform(1, 3) = pose.position.y;
+    transform(2, 3) = pose.position.z;
+
+    return transform;
+}
 
 GlobalLocalizer::GlobalLocalizer() { 
     nh_ = ros::NodeHandle("~");
@@ -64,6 +82,7 @@ GlobalLocalizer::GlobalLocalizer() {
     map_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/voxelized_map", 1);
     Quatro_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/QUATRO_result", 1);
     MCL_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/MCL_result", 1);
+    best_transformation_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/best_result", 1);
     Particle_pub_ = nh_.advertise<geometry_msgs::PoseArray>("particle_poses", 1);
 
     // Read parameters
@@ -101,8 +120,8 @@ GlobalLocalizer::GlobalLocalizer() {
     m_quatro_handler = std::make_shared<quatro<QuatroPointType>>(3.5, 5.0, 0.3, 1.4, 0.00011, 500, false);
     m_sub_odom = std::make_shared<message_filters::Subscriber<nav_msgs::Odometry>>(nh_, "/Odometry", 10);
     m_sub_pcd = std::make_shared<message_filters::Subscriber<sensor_msgs::PointCloud2>>(nh_, "/cloud_registered", 10);
-    m_sub_odom_pcd_sync = std::make_shared<message_filters::Synchronizer<message_filters::sync_policies::ApproximateTime<nav_msgs::Odometry, sensor_msgs::PointCloud2>>>>(odom_pcd_sync_pol(10), *m_sub_odom, *m_sub_pcd);
-    m_sub_odom_pcd_sync->registerCallback(boost::bind(&FastLioLocalizationQnClass::odomPcdCallback, this, _1, _2));
+    m_sub_odom_pcd_sync = std::make_shared<message_filters::Synchronizer<sync_policy>>(sync_policy(10), *m_sub_odom, *m_sub_pcd);
+    m_sub_odom_pcd_sync->registerCallback(boost::bind(&GlobalLocalizer::Callback, this, _1, _2));
 
     // Initialize transform broadcaster
     br_ = new tf::TransformBroadcaster();
@@ -156,14 +175,16 @@ void GlobalLocalizer::weightParticles(PointCloud::Ptr cloud) {
         pcl::transformPointCloud(*cloud, *transformed_cloud, particle.pose);
 
         // Use ICP to refine the alignment and compute the fitness score
-        pcl::IterativeClosestPoint<QuatroPointType, QuatroPointType> icp;
-        icp.setInputSource(transformed_cloud);
-        icp.setInputTarget(map_);
+        // pcl::IterativeClosestPoint<QuatroPointType, QuatroPointType> icp;
+        gicp_.setInputSource(transformed_cloud);
+        gicp_.setInputTarget(map_);
         pcl::PointCloud<QuatroPointType> aligned_cloud;
         
-        icp.align(aligned_cloud);
-        if(icp.hasConverged()){
-            particle.pose = particle.pose * icp.getFinalTransformation().cast<double>();
+        gicp_.align(aligned_cloud);
+        if(gicp_.hasConverged()){
+            // T^map_odom = T^map_pose*T^pose_odom
+
+            particle.pose = gicp_.getFinalTransformation().cast<double>() * particle.pose;
 
             pcl::PointCloud<QuatroPointType>::Ptr refined_cloud(new pcl::PointCloud<QuatroPointType>);
 
@@ -206,37 +227,55 @@ void GlobalLocalizer::resampleParticles() {
     particles_ = std::move(new_particles);
 }
 
-void GlobalLocalizer::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg) {
+void GlobalLocalizer::Callback(const nav_msgs::OdometryConstPtr& odom_msg, const sensor_msgs::PointCloud2ConstPtr& pcd_msg) {
     ROS_INFO_STREAM("\n\n\nReceived point cloud message.");
-
-    if(best_mse_ < terminal_mse_){
-        ROS_INFO_STREAM("Already reach the terminal mse: " << best_mse_);
-        std::this_thread::sleep_for(std::chrono::seconds(100));
-        return;
-    }
-    
-    // Publish the voxelized map
-    sensor_msgs::PointCloud2 map_msg;
-    pcl::toROSMsg(*map_, map_msg);
-    map_msg.header.frame_id = "map";
-    map_pub_.publish(map_msg);
-
     // Convert ROS PointCloud2 to PCL PointCloud
-    PointCloud::Ptr cloud(new PointCloud);
-    pcl::fromROSMsg(*cloud_msg, *cloud);
+    PointCloud::Ptr pcd(new PointCloud);
+    pcl::fromROSMsg(*pcd_msg, *pcd);
 
-    ROS_INFO_STREAM("Input cloud size: " << cloud->points.size());
+    LidarFrame frame = LidarFrame(pcd, poseMsgToEigen(odom_msg->pose.pose));
+    if (lidar_queue_.empty()) {
+        lidar_queue_.push_back(frame);
+    }
+    else {
+        Eigen::Vector3d last_position = lidar_queue_.back().pose_.block<3, 1>(0, 3);
+        Eigen::Vector3d curr_position = frame.pose_.block<3, 1>(0, 3);
+        if (key_frame_threshold_ < (last_position - curr_position).norm()){
+            lidar_queue_.push_back(frame);
+            if(lidar_queue_.size() >= sub_map_size_) {
+                lidar_queue_.pop_front();
+            }
+        }
+        else {
+            ROS_INFO("Not enough distance for Lidar Keyframe");
+            return;
+        }
+    }
 
-    // Downsample the point cloud
+    // if(best_mse_ < terminal_mse_){
+    //     ROS_INFO_STREAM("Already reach the terminal mse: " << best_mse_);
+    //     std::this_thread::sleep_for(std::chrono::seconds(100));
+    //     return;
+    // }
+    PointCloud::Ptr temp_submap(new PointCloud);
+    for(auto temp_frame : lidar_queue_){
+        *temp_submap += *temp_frame.pcd_;
+    }
+
+    ROS_INFO_STREAM("Input sub map size: " << temp_submap->points.size());
+
+    // Downsample the point curr_sub_map_
     PointCloud::Ptr downsampled_cloud(new PointCloud);
     pcl::VoxelGrid<QuatroPointType> voxel_grid;
     voxel_grid.setLeafSize(voxel_leaf_size_, voxel_leaf_size_, voxel_leaf_size_);
-    voxel_grid.setInputCloud(cloud);
+    voxel_grid.setInputCloud(temp_submap);
     voxel_grid.filter(*downsampled_cloud);
 
-    ROS_INFO_STREAM("Downsampled cloud size: " << downsampled_cloud->points.size());
+    ROS_INFO_STREAM("Downsampled sub map size: " << downsampled_cloud->points.size());
+    curr_sub_map_ = downsampled_cloud;
 
-    // Check for NaN or infinite values in the downsampled cloud
+
+    // Check for NaN or infinite values in the downsampled curr_sub_map_
     bool has_nan = false;
     for (const auto& point : downsampled_cloud->points) {
         if (!pcl::isFinite(point)) {
@@ -245,7 +284,7 @@ void GlobalLocalizer::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& clou
         }
     }
     if (has_nan) {
-        ROS_WARN("Downsampled cloud contains NaN or infinite values.");
+        ROS_WARN("Downsampled sub map contains NaN or infinite values.");
         return;
     }
 
@@ -253,8 +292,9 @@ void GlobalLocalizer::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& clou
     bool if_valid_;
     ROS_INFO_STREAM("Quatro Aligning point clouds...");
     PointCloud::Ptr quatro_cloud(new PointCloud);
-    Eigen::Matrix4d quatro_transformation = m_quatro_handler->align(*downsampled_cloud, *map_, if_valid_);
-    pcl::transformPointCloud(*downsampled_cloud, *quatro_cloud, quatro_transformation);
+    Eigen::Matrix4d quatro_transformation = m_quatro_handler->align(*curr_sub_map_, *map_, if_valid_);
+    //Transfrom the pcd from odom frame to map frame
+    pcl::transformPointCloud(*curr_sub_map_, *quatro_cloud, quatro_transformation);
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - start;
@@ -262,8 +302,11 @@ void GlobalLocalizer::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& clou
     
     // Calculate MSE
     double quatro_mse = computeMSE(*quatro_cloud, *map_);
-    ROS_INFO_STREAM("MSE between Quatro cloud and map: " << quatro_mse);
-
+    ROS_INFO_STREAM("MSE between Quatro pcd and map: " << quatro_mse);
+    sensor_msgs::PointCloud2 quatro_msg;
+    pcl::toROSMsg(*quatro_cloud, quatro_msg);
+    quatro_msg.header.frame_id = "map";
+    Quatro_pub_.publish(quatro_msg);
     double mcl_mse = 100;
     Eigen::Matrix4d mcl_transformation;
     if (if_valid_ && quatro_mse < quatro_mse_th_) {  // Check against Quatro MSE threshold
@@ -294,7 +337,7 @@ void GlobalLocalizer::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& clou
 
             pcl::transformPointCloud(*downsampled_cloud, *mcl_cloud, mcl_transformation );
             mcl_mse = computeMSE(*mcl_cloud, *map_);
-            ROS_INFO_STREAM("MSE between MCL cloud and map: " << mcl_mse);
+            ROS_INFO_STREAM("MSE between MCL curr_sub_map_ and map: " << mcl_mse);
             
             if (mcl_mse < mcl_mse_th_ && mcl_mse < quatro_mse && mcl_mse < best_mse_) {
                 ROS_INFO_STREAM("MCL converged.");
@@ -326,14 +369,11 @@ void GlobalLocalizer::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& clou
         ROS_INFO_STREAM("MCL refinement took " << elapsed.count() << " seconds.");
         
 
-        // Publish the aligned point cloud for visualization
-        sensor_msgs::PointCloud2 quatro_msg, mcl_msg;
-        pcl::toROSMsg(*quatro_cloud, quatro_msg);
+        // Publish the aligned point curr_sub_map_ for visualization
+        sensor_msgs::PointCloud2 mcl_msg;
         pcl::toROSMsg(*mcl_cloud, mcl_msg);
-        quatro_msg.header.frame_id = "map";
         mcl_msg.header.frame_id = "map";
 
-        Quatro_pub_.publish(quatro_msg);
         MCL_pub_.publish(mcl_msg);
         double final_mse = quatro_mse < mcl_mse ? quatro_mse : mcl_mse;
         Eigen::Matrix4d final_transformation = quatro_mse < mcl_mse ? quatro_transformation : mcl_transformation;
@@ -343,11 +383,11 @@ void GlobalLocalizer::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& clou
             ROS_INFO_STREAM("!!!Update Transformation with mse: " << best_mse_);
             ROS_INFO_STREAM(final_transformation);
         } 
-        std::this_thread::sleep_for(std::chrono::seconds(update_period_));
+        // std::this_thread::sleep_for(std::chrono::seconds(update_period_));
 
     } else {
         ROS_WARN("QUATRO did not converge.");
-        std::this_thread::sleep_for(std::chrono::seconds(update_period_/2));
+        // std::this_thread::sleep_for(std::chrono::seconds(update_period_/2));
     }
 }
 
@@ -420,8 +460,24 @@ void GlobalLocalizer::loadMap() {
 }
 
 void GlobalLocalizer::publishPose() {
-    ros::Rate rate(100); // Publish at 100 Hz
+    ros::Rate rate(20); // Publish at 100 Hz
     while (ros::ok()) {
+            
+        // Publish the voxelized map
+        sensor_msgs::PointCloud2 map_msg, best_transformation_msg;
+        pcl::toROSMsg(*map_, map_msg);
+        map_msg.header.frame_id = "map";
+        map_pub_.publish(map_msg);
+
+        if (lidar_queue_.size()>sub_map_size_/2){
+            PointCloud::Ptr best_transformation_pcd(new PointCloud());
+            pcl::transformPointCloud(*curr_sub_map_, *best_transformation_pcd, odom_to_map_transfromation_);
+            pcl::toROSMsg(*best_transformation_pcd, best_transformation_msg);
+            best_transformation_msg.header.frame_id = "map";
+            best_transformation_pub_.publish(best_transformation_msg);
+        }
+
+
 
         // Convert the map->odom transformation to a TransformStamped
         geometry_msgs::TransformStamped odom_to_map = convertEigenToTF(odom_to_map_transfromation_,
