@@ -13,6 +13,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -std=c++17 -pthread -O2 
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
   roscpp
+  rospy
   sensor_msgs
   std_msgs
   visualization_msgs
@@ -22,6 +23,8 @@ find_package(catkin REQUIRED COMPONENTS
   pcl_conversions
   quatro
 )
+catkin_python_setup()
+
 find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
 if(PCL_FOUND)
@@ -53,7 +56,7 @@ link_directories(${TBB2020_LIBRARY_DIR})
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES localizer
-#  CATKIN_DEPENDS geometry_msgs roscpp sensor_msgs std_msgs visualization_msgs
+#  CATKIN_DEPENDS rospy geometry_msgs roscpp sensor_msgs std_msgs visualization_msgs
 #  DEPENDS system_lib
 )
 
