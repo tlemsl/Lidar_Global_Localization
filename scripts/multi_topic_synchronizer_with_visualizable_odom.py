@@ -7,6 +7,7 @@ from sensor_msgs.msg import Imu
 from novatel_oem7_msgs.msg import BESTVEL, HEADING2
 from message_filters import Subscriber, ApproximateTimeSynchronizer
 import tf
+import tf.transformations as transformations
 
 class OdomPublisher:
     def __init__(self):
@@ -30,6 +31,8 @@ class OdomPublisher:
         # Variable to store initial odometry position
         self.initial_position = None
 
+        self.br = tf.TransformBroadcaster()
+
         rospy.loginfo("Synchronizer node started.")
         rospy.spin()
 
@@ -40,28 +43,32 @@ class OdomPublisher:
         # rospy.loginfo("BESTVEL timestamp: %s", str(bestvel_msg.header.stamp))
 
         # Store the initial position of the first odom message
-        if self.initial_position is None:
-            self.initial_position = (odom_msg.pose.pose.position.x,
-                                     odom_msg.pose.pose.position.y,
-                                     odom_msg.pose.pose.position.z)
+        # Convert yaw to a quaternion
+        yaw = -heading_msg.heading/180*3.14 + 3.14/2
+        position = (odom_msg.pose.pose.position.x,
+                    odom_msg.pose.pose.position.y,
+                    odom_msg.pose.pose.position.z)
+        quaternion = tf.transformations.quaternion_from_euler(0, 0, yaw)
         
+        if self.initial_position is None:
+            self.initial_position = position
+        self.br.sendTransform(self.initial_position, (0,0,0,1), rospy.Time.now(), "odom", "map")
         # Extract position from odom_msg
         x = odom_msg.pose.pose.position.x - self.initial_position[0]
         y = odom_msg.pose.pose.position.y - self.initial_position[1]
         z = odom_msg.pose.pose.position.z - self.initial_position[2]
+        self.br.sendTransform((x,y,z), quaternion, rospy.Time.now(), "base_link", "odom")
 
         # Extract velocities from bestvel_msg
         x_vel = bestvel_msg.hor_speed
         y_vel = bestvel_msg.ver_speed
-        yaw = -heading_msg.heading/180*3.14 + 3.14/2
 
         # Create a new Pose message
         pose_msg = PoseStamped()
         pose_msg.header = odom_msg.header
+        pose_msg.header.frame_id = "map"
         pose_msg.pose =  odom_msg.pose.pose
 
-        # Convert yaw to a quaternion
-        quaternion = tf.transformations.quaternion_from_euler(0, 0, yaw)
         pose_msg.pose.orientation.x = quaternion[0]
         pose_msg.pose.orientation.y = quaternion[1]
         pose_msg.pose.orientation.z = quaternion[2]
@@ -73,6 +80,7 @@ class OdomPublisher:
         # Create and publish new Odometry message
         new_odom_msg = Odometry()
         new_odom_msg.header = odom_msg.header
+        new_odom_msg.header.frame_id = "map"
         new_odom_msg.child_frame_id = odom_msg.child_frame_id
 
         # Pose is based on odom_msg and pose_msg
@@ -98,7 +106,6 @@ class OdomPublisher:
         visualizable_pose_msg.position.z = z
 
         # Convert yaw to a quaternion
-        quaternion = tf.transformations.quaternion_from_euler(0, 0, yaw)
         visualizable_pose_msg.orientation.x = quaternion[0]
         visualizable_pose_msg.orientation.y = quaternion[1]
         visualizable_pose_msg.orientation.z = quaternion[2]
