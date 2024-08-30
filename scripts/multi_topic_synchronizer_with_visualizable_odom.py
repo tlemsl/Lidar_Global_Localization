@@ -18,6 +18,7 @@ class OdomPublisher:
         self.pose_pub = rospy.Publisher('/synced_pose', PoseStamped, queue_size=10)
         self.odom_pub = rospy.Publisher('/synced_odom', Odometry, queue_size=10)
         self.visualizable_odom_pub = rospy.Publisher('/visualizable_odom', Odometry, queue_size=10)
+        self.visualizable_pose_pub = rospy.Publisher('/odom_pose', PoseStamped, queue_size=10)
 
         # Create subscribers
         self.odom_sub = Subscriber('/novatel/oem7/odom', Odometry)
@@ -100,24 +101,28 @@ class OdomPublisher:
         visualizable_odom_msg.child_frame_id = odom_msg.child_frame_id
 
         # Pose based on normalized position
-        visualizable_pose_msg = Pose()
-        visualizable_pose_msg.position.x = x
-        visualizable_pose_msg.position.y = y
-        visualizable_pose_msg.position.z = z
+        visualizable_pose_msg = PoseStamped()
+        visualizable_pose_msg.header = odom_msg.header
+        visualizable_pose_msg.pose.position.x = x
+        visualizable_pose_msg.pose.position.y = y
+        visualizable_pose_msg.pose.position.z = z
 
         # Convert yaw to a quaternion
-        visualizable_pose_msg.orientation.x = quaternion[0]
-        visualizable_pose_msg.orientation.y = quaternion[1]
-        visualizable_pose_msg.orientation.z = quaternion[2]
-        visualizable_pose_msg.orientation.w = quaternion[3]
+        visualizable_pose_msg.pose.orientation.x = quaternion[0]
+        visualizable_pose_msg.pose.orientation.y = quaternion[1]
+        visualizable_pose_msg.pose.orientation.z = quaternion[2]
+        visualizable_pose_msg.pose.orientation.w = quaternion[3]
 
-        visualizable_odom_msg.pose.pose = visualizable_pose_msg
+        visualizable_odom_msg.pose.pose = visualizable_pose_msg.pose
         visualizable_odom_msg.twist.twist.linear.x = x_vel
         visualizable_odom_msg.twist.twist.linear.y = y_vel
         # visualizable_odom_msg.twist.twist.angular.z = yaw
 
         # Publish visualizable Odometry message
         self.visualizable_odom_pub.publish(visualizable_odom_msg)
+        self.visualizable_pose_pub.publish(visualizable_pose_msg)
+        
+
 
 if __name__ == '__main__':
     OdomPublisher()
