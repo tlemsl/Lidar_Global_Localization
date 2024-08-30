@@ -103,6 +103,7 @@ class OdomPublisher:
         # Pose based on normalized position
         visualizable_pose_msg = PoseStamped()
         visualizable_pose_msg.header = odom_msg.header
+        visualizable_pose_msg.header.frame_id = "odom"
         visualizable_pose_msg.pose.position.x = x
         visualizable_pose_msg.pose.position.y = y
         visualizable_pose_msg.pose.position.z = z
